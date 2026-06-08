@@ -12,7 +12,7 @@ use crate::utils::{
     get_buildah_args, mount_container, path_pairs_to_hash_map, port_pairs_to_hash_map,
     umount_container, BuildahCommand, PathPair, PortPair,
 };
-use crate::{KrunvmConfig, NetworkMode, VmConfig, APP_NAME};
+use crate::{store_config, KrunvmConfig, NetworkMode, VmConfig, APP_NAME};
 
 #[cfg(target_os = "macos")]
 const KRUNVM_ROSETTA_FILE: &str = ".krunvm-rosetta";
@@ -187,7 +187,7 @@ https://threedots.ovh/blog/2022/06/quick-look-at-rosetta-on-linux/
         umount_container(cfg, &vmcfg).unwrap();
 
         cfg.vmconfig_map.insert(name.clone(), vmcfg);
-        confy::store(APP_NAME, cfg).unwrap();
+        store_config(cfg);
 
         println!("microVM created with name: {}", name);
     }

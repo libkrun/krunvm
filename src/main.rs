@@ -59,10 +59,10 @@ pub struct VmConfig {
     container: String,
     workdir: String,
     dns: String,
-    mapped_volumes: HashMap<String, String>,
-    mapped_ports: HashMap<String, String>,
     #[serde(default)]
     network: NetworkMode,
+    mapped_volumes: HashMap<String, String>,
+    mapped_ports: HashMap<String, String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -107,6 +107,14 @@ fn load_config() -> KrunvmConfig {
             print_config_load_error(config_path.as_deref(), &err);
             std::process::exit(1);
         }
+    }
+}
+
+/// Store the krunvm configuration or exit with a useful diagnostic.
+pub fn store_config(cfg: &KrunvmConfig) {
+    if let Err(err) = confy::store(APP_NAME, cfg) {
+        print_config_store_error(config_file_path().as_deref(), &err);
+        std::process::exit(1);
     }
 }
 
@@ -225,6 +233,31 @@ fn print_config_load_error(config_path: Option<&Path>, err: &confy::ConfyError) 
     }
 }
 
+/// Print a config storing error with repair hints.
+fn print_config_store_error(config_path: Option<&Path>, err: &confy::ConfyError) {
+    eprintln!("Error: failed to write krunvm configuration.");
+
+    if let Some(config_path) = config_path {
+        eprintln!("Configuration file: {}", config_path.display());
+    }
+
+    let reason = match err {
+        confy::ConfyError::SerializeTomlError(err) => {
+            format!("Failed to serialize configuration data into TOML: {}", err)
+        }
+        _ => err.to_string(),
+    };
+    eprintln!("Reason: {}", reason);
+
+    if reason.contains("values must be emitted before tables") {
+        eprintln!(
+            "Hint: krunvm could not serialize the current config layout; please report this as a bug."
+        );
+    } else {
+        eprintln!("Hint: check that the configuration directory exists and is writable.");
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn check_case_sensitivity(volume: &str) -> Result<bool, io::Error> {
     let first_path = format!("{}/krunvm_test", volume);
@@ -291,7 +324,7 @@ volume.
                     println!("success.");
                     println!("The volume has been configured. Please execute krunvm again");
                     cfg.storage_volume = volume;
-                    confy::store(APP_NAME, cfg).unwrap();
+                    store_config(cfg);
                     std::process::exit(-1);
                 } else {
                     println!("failed.");
@@ -412,5 +445,40 @@ fn main() {
         Command::Delete(cmd) => cmd.run(&mut cfg),
         Command::ChangeVm(cmd) => cmd.run(&mut cfg),
         Command::Config(cmd) => cmd.run(&mut cfg),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serializes_vm_config_with_network_and_mapping_tables() {
+        let mut cfg = KrunvmConfig::default();
+        cfg.vmconfig_map.insert(
+            "ubuntu".to_string(),
+            VmConfig {
+                name: "ubuntu".to_string(),
+                cpus: 2,
+                mem: 1024,
+                container: "ubuntu-container".to_string(),
+                workdir: String::new(),
+                dns: "1.1.1.1".to_string(),
+                network: NetworkMode::None,
+                mapped_volumes: HashMap::new(),
+                mapped_ports: HashMap::new(),
+            },
+        );
+
+        let path =
+            env::temp_dir().join(format!("krunvm-serialize-test-{}.toml", std::process::id()));
+
+        confy::store_path(&path, &cfg).unwrap();
+        let config_data = std::fs::read_to_string(&path).unwrap();
+        let _ = std::fs::remove_file(path);
+
+        assert!(config_data.contains("network = 'none'"));
+        assert!(config_data.contains("[vmconfig_map.ubuntu.mapped_volumes]"));
+        assert!(config_data.contains("[vmconfig_map.ubuntu.mapped_ports]"));
     }
 }

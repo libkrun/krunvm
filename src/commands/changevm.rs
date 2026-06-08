@@ -5,7 +5,7 @@ use clap::Args;
 use std::collections::HashMap;
 
 use crate::utils::{path_pairs_to_hash_map, port_pairs_to_hash_map, PathPair, PortPair};
-use crate::{KrunvmConfig, NetworkMode, APP_NAME};
+use crate::{store_config, KrunvmConfig, NetworkMode};
 
 use super::list::printvm;
 
@@ -149,7 +149,7 @@ impl ChangeVmCmd {
         println!();
 
         if cfg_changed {
-            confy::store(APP_NAME, &cfg).unwrap();
+            store_config(cfg);
         }
     }
 }
