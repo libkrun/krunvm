@@ -1,7 +1,7 @@
 // Copyright 2021 Red Hat, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{KrunvmConfig, APP_NAME};
+use crate::{store_config, KrunvmConfig};
 use clap::Args;
 
 use crate::utils::{remove_container, umount_container};
@@ -26,6 +26,6 @@ impl DeleteCmd {
         umount_container(cfg, &vmcfg).unwrap();
         remove_container(cfg, &vmcfg).unwrap();
 
-        confy::store(APP_NAME, &cfg).unwrap();
+        store_config(cfg);
     }
 }

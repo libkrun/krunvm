@@ -33,6 +33,9 @@ libkrun's TSI (Transparent Socket Impersonation), enabling a seamless
 experience that doesn't require network bridges nor other explicit
 network configuration.
 
+Networking can be disabled for a microVM by setting its network mode
+to _none_.
+
 
 GLOBAL OPTIONS
 --------------

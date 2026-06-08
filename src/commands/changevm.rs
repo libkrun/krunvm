@@ -5,7 +5,7 @@ use clap::Args;
 use std::collections::HashMap;
 
 use crate::utils::{path_pairs_to_hash_map, port_pairs_to_hash_map, PathPair, PortPair};
-use crate::{KrunvmConfig, APP_NAME};
+use crate::{store_config, KrunvmConfig, NetworkMode};
 
 use super::list::printvm;
 
@@ -26,6 +26,10 @@ pub struct ChangeVmCmd {
     /// Amount of RAM in MiB
     #[arg(long)]
     mem: Option<u32>,
+
+    /// Network mode to use for the microVM
+    #[arg(long, value_enum)]
+    network: Option<NetworkMode>,
 
     /// Working directory inside the microVM
     #[arg(short, long)]
@@ -99,6 +103,16 @@ impl ChangeVmCmd {
             }
         }
 
+        if self.network == Some(NetworkMode::None) && !self.ports.is_empty() {
+            println!("Error: port mappings cannot be used with --network=none");
+            std::process::exit(-1);
+        }
+
+        if let Some(network) = self.network {
+            vmcfg.network = network;
+            cfg_changed = true;
+        }
+
         if self.remove_volumes {
             vmcfg.mapped_volumes = HashMap::new();
             cfg_changed = true;
@@ -135,7 +149,7 @@ impl ChangeVmCmd {
         println!();
 
         if cfg_changed {
-            confy::store(APP_NAME, &cfg).unwrap();
+            store_config(cfg);
         }
     }
 }

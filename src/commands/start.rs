@@ -19,7 +19,7 @@ use std::path::Path;
 
 use crate::bindings;
 use crate::utils::{mount_container, umount_container};
-use crate::{KrunvmConfig, VmConfig};
+use crate::{KrunvmConfig, NetworkMode, VmConfig};
 
 #[derive(Args, Debug)]
 /// Start an existing microVM
@@ -44,6 +44,10 @@ pub struct StartCmd {
     /// env(s) in format "key=value" to be exposed to the VM
     #[arg(long = "env")]
     envs: Option<Vec<String>>,
+
+    /// Network mode to use for this run
+    #[arg(long, value_enum)]
+    network: Option<NetworkMode>,
 }
 
 impl StartCmd {
@@ -56,6 +60,7 @@ impl StartCmd {
             Some(vmcfg) => vmcfg,
         };
 
+        let network = self.network.unwrap_or(vmcfg.network);
         umount_container(cfg, vmcfg).expect("Error unmounting container");
         let rootfs = mount_container(cfg, vmcfg).expect("Error mounting container");
 
@@ -80,7 +85,16 @@ impl StartCmd {
 
         let _file = set_lock(&rootfs);
 
-        unsafe { exec_vm(vmcfg, &rootfs, self.command.as_deref(), vm_args, env_pairs) };
+        unsafe {
+            exec_vm(
+                vmcfg,
+                &rootfs,
+                self.command.as_deref(),
+                vm_args,
+                env_pairs,
+                network,
+            )
+        };
 
         umount_container(cfg, vmcfg).expect("Error unmounting container");
     }
@@ -143,6 +157,7 @@ unsafe fn exec_vm(
     cmd: Option<&str>,
     args: Vec<CString>,
     env_pairs: Vec<CString>,
+    network: NetworkMode,
 ) {
     //bindings::krun_set_log_level(9);
 
@@ -161,6 +176,14 @@ unsafe fn exec_vm(
         std::process::exit(-1);
     }
 
+    if network == NetworkMode::None {
+        let ret = bindings::krun_disable_implicit_vsock(ctx);
+        if ret < 0 {
+            println!("Error disabling VM networking");
+            std::process::exit(-1);
+        }
+    }
+
     #[cfg(target_os = "linux")]
     map_volumes(ctx, vmcfg, rootfs);
     #[cfg(target_os = "macos")]
@@ -168,21 +191,23 @@ unsafe fn exec_vm(
     #[cfg(target_os = "macos")]
     let mount_wrapper = build_mount_wrapper(rootfs, cmd, &vmcfg.workdir, &args, &virtiofs_mounts);
 
-    let mut ports = Vec::new();
-    for (host_port, guest_port) in vmcfg.mapped_ports.iter() {
-        let map = format!("{}:{}", host_port, guest_port);
-        ports.push(CString::new(map).unwrap());
-    }
-    let mut ps: Vec<*const c_char> = Vec::new();
-    for port in ports.iter() {
-        ps.push(port.as_ptr());
-    }
-    ps.push(std::ptr::null());
+    if network != NetworkMode::None {
+        let mut ports = Vec::new();
+        for (host_port, guest_port) in vmcfg.mapped_ports.iter() {
+            let map = format!("{}:{}", host_port, guest_port);
+            ports.push(CString::new(map).unwrap());
+        }
+        let mut ps: Vec<*const c_char> = Vec::new();
+        for port in ports.iter() {
+            ps.push(port.as_ptr());
+        }
+        ps.push(std::ptr::null());
 
-    let ret = bindings::krun_set_port_map(ctx, ps.as_ptr());
-    if ret < 0 {
-        println!("Error setting VM port map");
-        std::process::exit(-1);
+        let ret = bindings::krun_set_port_map(ctx, ps.as_ptr());
+        if ret < 0 {
+            println!("Error setting VM port map");
+            std::process::exit(-1);
+        }
     }
 
     if !vmcfg.workdir.is_empty() {

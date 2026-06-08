@@ -1,7 +1,7 @@
 // Copyright 2021 Red Hat, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{KrunvmConfig, APP_NAME};
+use crate::{store_config, KrunvmConfig};
 use clap::Args;
 
 /// Configure global values
@@ -48,7 +48,7 @@ impl ConfigCmd {
         }
 
         if cfg_changed {
-            confy::store(APP_NAME, &cfg).unwrap();
+            store_config(cfg);
         }
 
         println!("Global configuration:");

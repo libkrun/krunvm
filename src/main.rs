@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::HashMap;
-#[cfg(target_os = "macos")]
 use std::env;
 #[cfg(target_os = "macos")]
 use std::ffi::CString;
@@ -12,11 +11,12 @@ use std::fs::File;
 use std::io::{self, Error, ErrorKind, Read, Write};
 #[cfg(target_os = "macos")]
 use std::os::unix::ffi::OsStringExt;
+use std::path::{Path, PathBuf};
 
 use crate::commands::{
     ChangeVmCmd, ConfigCmd, CreateCmd, DeleteCmd, InspectCmd, ListCmd, StartCmd,
 };
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 #[cfg(target_os = "macos")]
 use nix::unistd::execve;
 use serde_derive::{Deserialize, Serialize};
@@ -30,6 +30,27 @@ mod utils;
 
 const APP_NAME: &str = "krunvm";
 
+/// Network mode used when starting a microVM.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum NetworkMode {
+    /// Use libkrun's default TSI networking.
+    #[default]
+    Default,
+    /// Disable all implicit networking.
+    None,
+}
+
+impl std::fmt::Display for NetworkMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mode = match self {
+            NetworkMode::Default => "default",
+            NetworkMode::None => "none",
+        };
+        write!(f, "{}", mode)
+    }
+}
+
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct VmConfig {
     name: String,
@@ -38,12 +59,15 @@ pub struct VmConfig {
     container: String,
     workdir: String,
     dns: String,
+    #[serde(default)]
+    network: NetworkMode,
     mapped_volumes: HashMap<String, String>,
     mapped_ports: HashMap<String, String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct KrunvmConfig {
+    #[serde(default = "default_config_version")]
     version: u8,
     default_cpus: u32,
     default_mem: u32,
@@ -62,6 +86,175 @@ impl Default for KrunvmConfig {
             storage_volume: String::new(),
             vmconfig_map: HashMap::new(),
         }
+    }
+}
+
+/// Return the current config file format version.
+fn default_config_version() -> u8 {
+    1
+}
+
+/// Load the krunvm configuration or exit with a useful diagnostic.
+fn load_config() -> KrunvmConfig {
+    let config_path = config_file_path();
+
+    match confy::load(APP_NAME) {
+        Ok(cfg) => {
+            warn_if_config_version_missing(config_path.as_deref());
+            cfg
+        }
+        Err(err) => {
+            print_config_load_error(config_path.as_deref(), &err);
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Store the krunvm configuration or exit with a useful diagnostic.
+pub fn store_config(cfg: &KrunvmConfig) {
+    if let Err(err) = confy::store(APP_NAME, cfg) {
+        print_config_store_error(config_file_path().as_deref(), &err);
+        std::process::exit(1);
+    }
+}
+
+/// Return the config path used by confy for supported krunvm platforms.
+fn config_file_path() -> Option<PathBuf> {
+    config_dir().map(|dir| {
+        dir.join(config_project_path())
+            .join(format!("{}.toml", APP_NAME))
+    })
+}
+
+/// Return the project path used by confy for supported krunvm platforms.
+fn config_project_path() -> &'static str {
+    #[cfg(target_os = "macos")]
+    {
+        "rs.krunvm"
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        APP_NAME
+    }
+}
+
+/// Return the config directory used by confy for supported krunvm platforms.
+fn config_dir() -> Option<PathBuf> {
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(dir) = env::var_os("XDG_CONFIG_HOME").map(PathBuf::from) {
+            if dir.is_absolute() {
+                return Some(dir);
+            }
+        }
+
+        home_dir().map(|home| home.join(".config"))
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        home_dir().map(|home| home.join("Library/Preferences"))
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        None
+    }
+}
+
+/// Return the current user's home directory from the environment.
+fn home_dir() -> Option<PathBuf> {
+    env::var_os("HOME")
+        .filter(|home| !home.is_empty())
+        .map(PathBuf::from)
+}
+
+/// Warn when a legacy config file is missing the top-level config version.
+fn warn_if_config_version_missing(config_path: Option<&Path>) {
+    let Some(config_path) = config_path else {
+        return;
+    };
+
+    let Ok(config_data) = std::fs::read_to_string(config_path) else {
+        return;
+    };
+
+    if top_level_key_exists(&config_data, "version") {
+        return;
+    }
+
+    eprintln!(
+        "Warning: {} is missing a top-level `version` field; assuming `version = 1`.",
+        config_path.display()
+    );
+    eprintln!(
+        "To remove this warning, add `version = 1` before any TOML table headers in that file."
+    );
+}
+
+/// Return whether a top-level TOML key appears before any table header.
+fn top_level_key_exists(config_data: &str, key: &str) -> bool {
+    for line in config_data.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if trimmed.starts_with('[') {
+            break;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix(key) {
+            if rest.trim_start().starts_with('=') {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+/// Print a config loading error with repair hints.
+fn print_config_load_error(config_path: Option<&Path>, err: &confy::ConfyError) {
+    eprintln!("Error: failed to load krunvm configuration.");
+
+    if let Some(config_path) = config_path {
+        eprintln!("Configuration file: {}", config_path.display());
+    }
+
+    eprintln!("Reason: {}", err);
+
+    if err.to_string().contains("missing field `version`") {
+        eprintln!("Hint: add `version = 1` as a top-level entry before any TOML table headers.");
+    } else {
+        eprintln!(
+            "Hint: fix the TOML in the configuration file, or move it aside and run krunvm again to create a default config."
+        );
+    }
+}
+
+/// Print a config storing error with repair hints.
+fn print_config_store_error(config_path: Option<&Path>, err: &confy::ConfyError) {
+    eprintln!("Error: failed to write krunvm configuration.");
+
+    if let Some(config_path) = config_path {
+        eprintln!("Configuration file: {}", config_path.display());
+    }
+
+    let reason = match err {
+        confy::ConfyError::SerializeTomlError(err) => {
+            format!("Failed to serialize configuration data into TOML: {}", err)
+        }
+        _ => err.to_string(),
+    };
+    eprintln!("Reason: {}", reason);
+
+    if reason.contains("values must be emitted before tables") {
+        eprintln!(
+            "Hint: krunvm could not serialize the current config layout; please report this as a bug."
+        );
+    } else {
+        eprintln!("Hint: check that the configuration directory exists and is writable.");
     }
 }
 
@@ -131,7 +324,7 @@ volume.
                     println!("success.");
                     println!("The volume has been configured. Please execute krunvm again");
                     cfg.storage_volume = volume;
-                    confy::store(APP_NAME, cfg).unwrap();
+                    store_config(cfg);
                     std::process::exit(-1);
                 } else {
                     println!("failed.");
@@ -236,7 +429,7 @@ fn main() {
         }
     }
 
-    let mut cfg: KrunvmConfig = confy::load(APP_NAME).unwrap();
+    let mut cfg = load_config();
     let cli_args = Cli::parse();
 
     #[cfg(target_os = "macos")]
@@ -252,5 +445,40 @@ fn main() {
         Command::Delete(cmd) => cmd.run(&mut cfg),
         Command::ChangeVm(cmd) => cmd.run(&mut cfg),
         Command::Config(cmd) => cmd.run(&mut cfg),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serializes_vm_config_with_network_and_mapping_tables() {
+        let mut cfg = KrunvmConfig::default();
+        cfg.vmconfig_map.insert(
+            "ubuntu".to_string(),
+            VmConfig {
+                name: "ubuntu".to_string(),
+                cpus: 2,
+                mem: 1024,
+                container: "ubuntu-container".to_string(),
+                workdir: String::new(),
+                dns: "1.1.1.1".to_string(),
+                network: NetworkMode::None,
+                mapped_volumes: HashMap::new(),
+                mapped_ports: HashMap::new(),
+            },
+        );
+
+        let path =
+            env::temp_dir().join(format!("krunvm-serialize-test-{}.toml", std::process::id()));
+
+        confy::store_path(&path, &cfg).unwrap();
+        let config_data = std::fs::read_to_string(&path).unwrap();
+        let _ = std::fs::remove_file(path);
+
+        assert!(config_data.contains("network = 'none'"));
+        assert!(config_data.contains("[vmconfig_map.ubuntu.mapped_volumes]"));
+        assert!(config_data.contains("[vmconfig_map.ubuntu.mapped_ports]"));
     }
 }

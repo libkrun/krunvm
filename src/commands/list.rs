@@ -33,6 +33,7 @@ pub fn printvm(vm: &VmConfig) {
     println!(" DNS server: {}", vm.dns);
     println!(" Buildah container: {}", vm.container);
     println!(" Workdir: {}", vm.workdir);
+    println!(" Network: {}", vm.network);
     println!(" Mapped volumes: {:?}", vm.mapped_volumes);
     println!(" Mapped ports: {:?}", vm.mapped_ports);
 }
