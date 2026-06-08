@@ -67,6 +67,7 @@ pub struct VmConfig {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct KrunvmConfig {
+    #[serde(default = "default_config_version")]
     version: u8,
     default_cpus: u32,
     default_mem: u32,
@@ -86,6 +87,11 @@ impl Default for KrunvmConfig {
             vmconfig_map: HashMap::new(),
         }
     }
+}
+
+/// Return the current config file format version.
+fn default_config_version() -> u8 {
+    1
 }
 
 #[cfg(target_os = "macos")]
