@@ -48,33 +48,12 @@ The build generates man pages from the files in `docs/`, so `asciidoctor` must b
 * Rust stable toolchain, including `cargo`
 * [libkrun](https://github.com/containers/libkrun) headers and libraries
 * [asciidoctor](https://github.com/asciidoctor/asciidoctor)
-* A C toolchain and the platform libraries required by `libkrun`
+* A working C linker/toolchain for native linking
+
+Install `libkrun` from your platform packages when available.
+If you need to build it from source, follow the upstream [`libkrun` repository](https://github.com/containers/libkrun) documentation.
 
 [buildah](https://github.com/containers/buildah) is required at runtime to create and manage VMs, but it is not linked into the `krunvm` binary.
-
-On macOS, install the Homebrew build dependencies with:
-
-```sh
-brew tap slp/krun
-brew install asciidoctor libkrun
-```
-
-On Debian or Ubuntu systems, the CI setup builds `libkrun` from source after installing its package dependencies:
-
-```sh
-sudo apt-get update
-sudo apt-get install -y \
-    asciidoctor \
-    libvirglrenderer-dev \
-    libepoxy-dev \
-    libdrm-dev \
-    libpipewire-0.3-dev \
-    libclang-dev
-curl -OL https://github.com/containers/libkrun/archive/refs/tags/v1.17.0.tar.gz
-tar xf v1.17.0.tar.gz
-make -C libkrun-1.17.0
-sudo make -C libkrun-1.17.0 PREFIX=/usr install
-```
 
 #### Building
 
