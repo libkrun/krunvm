@@ -52,6 +52,7 @@ The build generates man pages from the files in `docs/`, so `asciidoctor` must b
 
 Install `libkrun` from your platform packages when available.
 If you need to build it from source, follow the upstream [`libkrun` repository](https://github.com/containers/libkrun) documentation.
+If `libkrun` is installed outside the common system or Homebrew library directories, set `LIBKRUN_LIB_DIR` to the directory containing the shared library before building `krunvm`.
 
 [buildah](https://github.com/containers/buildah) is required at runtime to create and manage VMs, but it is not linked into the `krunvm` binary.
 
