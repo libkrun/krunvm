@@ -41,20 +41,19 @@ dnf install -y krunvm
 
 ### Building from sources
 
-The build generates man pages from the files in `docs/`, so `asciidoctor` must be installed and available in `PATH`.
+#### Dependencies
 
-#### Build-time dependencies
-
-* Rust stable toolchain, including `cargo`
-* [libkrun](https://github.com/containers/libkrun) headers and libraries
+* [Rust Toolchain](https://rustup.rs/)
+* [libkrun](https://github.com/containers/libkrun)
+* [buildah](https://github.com/containers/buildah)
 * [asciidoctor](https://github.com/asciidoctor/asciidoctor)
-* A working C linker/toolchain for native linking
 
-Install `libkrun` from your platform packages when available.
-If you need to build it from source, follow the upstream [`libkrun` repository](https://github.com/containers/libkrun) documentation.
-If `libkrun` is installed outside the common system or Homebrew library directories, set `LIBKRUN_LIB_DIR` to the directory containing the shared library before building `krunvm`.
 
-[buildah](https://github.com/containers/buildah) is required at runtime to create and manage VMs, but it is not linked into the `krunvm` binary.
+For example, on Debian/Ubuntu:
+
+```sh
+apt install asciidoctor buildah
+```
 
 #### Building
 
@@ -82,7 +81,7 @@ cargo build --release
 For more info on build errors run:
 
 ```sh
-RUSTFLAGS='--verbose' make
+make RUSTFLAGS='--verbose'
 ```
 
 If you build directly with Cargo on macOS, sign the resulting binary before running it.
