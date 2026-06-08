@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::HashMap;
-#[cfg(target_os = "macos")]
 use std::env;
 #[cfg(target_os = "macos")]
 use std::ffi::CString;
@@ -12,6 +11,7 @@ use std::fs::File;
 use std::io::{self, Error, ErrorKind, Read, Write};
 #[cfg(target_os = "macos")]
 use std::os::unix::ffi::OsStringExt;
+use std::path::{Path, PathBuf};
 
 use crate::commands::{
     ChangeVmCmd, ConfigCmd, CreateCmd, DeleteCmd, InspectCmd, ListCmd, StartCmd,
@@ -92,6 +92,137 @@ impl Default for KrunvmConfig {
 /// Return the current config file format version.
 fn default_config_version() -> u8 {
     1
+}
+
+/// Load the krunvm configuration or exit with a useful diagnostic.
+fn load_config() -> KrunvmConfig {
+    let config_path = config_file_path();
+
+    match confy::load(APP_NAME) {
+        Ok(cfg) => {
+            warn_if_config_version_missing(config_path.as_deref());
+            cfg
+        }
+        Err(err) => {
+            print_config_load_error(config_path.as_deref(), &err);
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Return the config path used by confy for supported krunvm platforms.
+fn config_file_path() -> Option<PathBuf> {
+    config_dir().map(|dir| {
+        dir.join(config_project_path())
+            .join(format!("{}.toml", APP_NAME))
+    })
+}
+
+/// Return the project path used by confy for supported krunvm platforms.
+fn config_project_path() -> &'static str {
+    #[cfg(target_os = "macos")]
+    {
+        "rs.krunvm"
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        APP_NAME
+    }
+}
+
+/// Return the config directory used by confy for supported krunvm platforms.
+fn config_dir() -> Option<PathBuf> {
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(dir) = env::var_os("XDG_CONFIG_HOME").map(PathBuf::from) {
+            if dir.is_absolute() {
+                return Some(dir);
+            }
+        }
+
+        home_dir().map(|home| home.join(".config"))
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        home_dir().map(|home| home.join("Library/Preferences"))
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        None
+    }
+}
+
+/// Return the current user's home directory from the environment.
+fn home_dir() -> Option<PathBuf> {
+    env::var_os("HOME")
+        .filter(|home| !home.is_empty())
+        .map(PathBuf::from)
+}
+
+/// Warn when a legacy config file is missing the top-level config version.
+fn warn_if_config_version_missing(config_path: Option<&Path>) {
+    let Some(config_path) = config_path else {
+        return;
+    };
+
+    let Ok(config_data) = std::fs::read_to_string(config_path) else {
+        return;
+    };
+
+    if top_level_key_exists(&config_data, "version") {
+        return;
+    }
+
+    eprintln!(
+        "Warning: {} is missing a top-level `version` field; assuming `version = 1`.",
+        config_path.display()
+    );
+    eprintln!(
+        "To remove this warning, add `version = 1` before any TOML table headers in that file."
+    );
+}
+
+/// Return whether a top-level TOML key appears before any table header.
+fn top_level_key_exists(config_data: &str, key: &str) -> bool {
+    for line in config_data.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if trimmed.starts_with('[') {
+            break;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix(key) {
+            if rest.trim_start().starts_with('=') {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+/// Print a config loading error with repair hints.
+fn print_config_load_error(config_path: Option<&Path>, err: &confy::ConfyError) {
+    eprintln!("Error: failed to load krunvm configuration.");
+
+    if let Some(config_path) = config_path {
+        eprintln!("Configuration file: {}", config_path.display());
+    }
+
+    eprintln!("Reason: {}", err);
+
+    if err.to_string().contains("missing field `version`") {
+        eprintln!("Hint: add `version = 1` as a top-level entry before any TOML table headers.");
+    } else {
+        eprintln!(
+            "Hint: fix the TOML in the configuration file, or move it aside and run krunvm again to create a default config."
+        );
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -265,7 +396,7 @@ fn main() {
         }
     }
 
-    let mut cfg: KrunvmConfig = confy::load(APP_NAME).unwrap();
+    let mut cfg = load_config();
     let cli_args = Cli::parse();
 
     #[cfg(target_os = "macos")]
