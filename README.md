@@ -78,6 +78,12 @@ You can also build directly with Cargo:
 cargo build --release
 ```
 
+For more info on build errors run:
+
+```sh
+RUSTFLAGS='--verbose' make
+```
+
 If you build directly with Cargo on macOS, sign the resulting binary before running it.
 
 #### Installing
