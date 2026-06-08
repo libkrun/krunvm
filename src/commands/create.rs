@@ -12,7 +12,7 @@ use crate::utils::{
     get_buildah_args, mount_container, path_pairs_to_hash_map, port_pairs_to_hash_map,
     umount_container, BuildahCommand, PathPair, PortPair,
 };
-use crate::{KrunvmConfig, VmConfig, APP_NAME};
+use crate::{KrunvmConfig, NetworkMode, VmConfig, APP_NAME};
 
 #[cfg(target_os = "macos")]
 const KRUNVM_ROSETTA_FILE: &str = ".krunvm-rosetta";
@@ -39,6 +39,10 @@ pub struct CreateCmd {
     #[arg(long)]
     dns: Option<String>,
 
+    /// Network mode to use for the microVM
+    #[arg(long, value_enum)]
+    network: Option<NetworkMode>,
+
     /// Working directory inside the microVM
     #[arg(short, long, default_value = "")]
     workdir: String,
@@ -64,6 +68,7 @@ impl CreateCmd {
         let mem = self.mem.unwrap_or(cfg.default_mem);
         let dns = self.dns.unwrap_or_else(|| cfg.default_dns.clone());
         let workdir = self.workdir;
+        let network = self.network.unwrap_or_default();
         let mapped_volumes = path_pairs_to_hash_map(self.volumes);
         let mapped_ports = port_pairs_to_hash_map(self.ports);
         let image = self.image;
@@ -78,6 +83,11 @@ impl CreateCmd {
                 println!("A VM with this name already exists");
                 std::process::exit(-1);
             }
+        }
+
+        if network == NetworkMode::None && !mapped_ports.is_empty() {
+            println!("Error: port mappings cannot be used with --network=none");
+            std::process::exit(-1);
         }
 
         let mut args = get_buildah_args(cfg, BuildahCommand::From);
@@ -162,6 +172,7 @@ https://threedots.ovh/blog/2022/06/quick-look-at-rosetta-on-linux/
             dns: dns.to_string(),
             container: container.to_string(),
             workdir: workdir.to_string(),
+            network,
             mapped_volumes,
             mapped_ports,
         };

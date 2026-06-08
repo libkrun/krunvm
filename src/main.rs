@@ -16,7 +16,7 @@ use std::os::unix::ffi::OsStringExt;
 use crate::commands::{
     ChangeVmCmd, ConfigCmd, CreateCmd, DeleteCmd, InspectCmd, ListCmd, StartCmd,
 };
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 #[cfg(target_os = "macos")]
 use nix::unistd::execve;
 use serde_derive::{Deserialize, Serialize};
@@ -30,6 +30,27 @@ mod utils;
 
 const APP_NAME: &str = "krunvm";
 
+/// Network mode used when starting a microVM.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum NetworkMode {
+    /// Use libkrun's default TSI networking.
+    #[default]
+    Default,
+    /// Disable all implicit networking.
+    None,
+}
+
+impl std::fmt::Display for NetworkMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mode = match self {
+            NetworkMode::Default => "default",
+            NetworkMode::None => "none",
+        };
+        write!(f, "{}", mode)
+    }
+}
+
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct VmConfig {
     name: String,
@@ -40,6 +61,8 @@ pub struct VmConfig {
     dns: String,
     mapped_volumes: HashMap<String, String>,
     mapped_ports: HashMap<String, String>,
+    #[serde(default)]
+    network: NetworkMode,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

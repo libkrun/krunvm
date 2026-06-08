@@ -36,6 +36,15 @@ OPTIONS
 *--env* _KEY=VALUE_::
   Set environment variable to be passed to the microVM.
 
+*--network* _MODE_::
+  Overrides the configured network mode for this run. Supported values
+  are _default_ and _none_.
++
+The _default_ mode uses libkrun's default TSI networking. The _none_
+mode disables implicit networking for the microVM.
++
+Port mappings are not applied when using _--network=none_.
+
 SEE ALSO
 --------
 *krunvm(1)*, *krunvm-create(1)*, *krunvm-changevm(1)*

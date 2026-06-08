@@ -34,6 +34,15 @@ will attempt to return as many pages as possible to the host.
 *--name* _NAME_::
   The name to be assigned to this microVM.
 
+*--network* _MODE_::
+  Sets the network mode for this microVM. Supported values are
+  _default_ and _none_.
++
+The _default_ mode uses libkrun's default TSI networking. The _none_
+mode disables implicit networking for the microVM.
++
+Port mappings cannot be used with _--network=none_.
+
 *-p, --port* _HOST_PORT:GUEST_PORT_::
   Exposes a port in the guest running in the microVM through a port in the host.
 +
