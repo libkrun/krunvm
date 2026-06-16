@@ -39,6 +39,12 @@ dnf copr enable -y slp/krunvm
 dnf install -y krunvm
 ```
 
+### openSUSE
+
+```
+zypper install -y krunvm
+```
+
 ### Building from sources
 
 #### Dependencies
