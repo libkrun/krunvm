@@ -24,6 +24,11 @@ which binary will be executed.
 Additional arguments for _COMMAND_ can be specified in the command
 line by appending _--_ followed by _ARGS_.
 
+On Linux, starting a microVM requires read/write access to _/dev/kvm_.
+If access is denied, make sure the user running *krunvm start* can
+access the group that owns _/dev/kvm_ in the same shell or
+*buildah unshare* session.
+
 
 OPTIONS
 -------

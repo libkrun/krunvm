@@ -7,10 +7,14 @@ use std::ffi::CString;
 #[cfg(target_os = "macos")]
 use std::fs;
 use std::fs::File;
+#[cfg(target_os = "linux")]
+use std::fs::OpenOptions;
 #[cfg(target_os = "macos")]
 use std::io::Write;
 #[cfg(target_os = "linux")]
 use std::io::{Error, ErrorKind};
+#[cfg(target_os = "linux")]
+use std::os::unix::fs::MetadataExt;
 #[cfg(target_os = "macos")]
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::io::AsRawFd;
@@ -61,6 +65,9 @@ impl StartCmd {
             }
             Some(vmcfg) => vmcfg,
         };
+
+        #[cfg(target_os = "linux")]
+        check_kvm_access();
 
         umount_container(cfg, vmcfg).expect("Error unmounting container");
         let rootfs = mount_container(cfg, vmcfg).expect("Error mounting container");
@@ -118,6 +125,85 @@ impl StartCmd {
 
         umount_container(cfg, vmcfg).expect("Error unmounting container");
     }
+}
+
+#[cfg(target_os = "linux")]
+fn check_kvm_access() {
+    const KVM_DEVICE: &str = "/dev/kvm";
+
+    if let Err(err) = OpenOptions::new().read(true).write(true).open(KVM_DEVICE) {
+        eprintln!("Error: unable to access {}: {}", KVM_DEVICE, err);
+        eprintln!("krunvm needs read/write access to KVM before it can start a Linux microVM.");
+
+        match err.kind() {
+            ErrorKind::NotFound => {
+                eprintln!(
+                    "Hint: ensure hardware virtualization is enabled and the KVM kernel modules are loaded."
+                );
+            }
+            ErrorKind::PermissionDenied => {
+                print_kvm_permission_context(KVM_DEVICE);
+                eprintln!(
+                    "Hint: grant your user access to the group that owns {}, commonly `kvm`, then start a new login or `buildah unshare` session.",
+                    KVM_DEVICE
+                );
+                eprintln!(
+                    "Check the same environment with: ls -l {} && id",
+                    KVM_DEVICE
+                );
+            }
+            _ => {
+                eprintln!(
+                    "Hint: fix {} so libkrun can open it before starting the microVM.",
+                    KVM_DEVICE
+                );
+            }
+        }
+
+        std::process::exit(1);
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn print_kvm_permission_context(path: &str) {
+    match std::fs::metadata(path) {
+        Ok(metadata) => {
+            eprintln!(
+                "Detected {} permissions: mode {:04o}, uid {}, gid {}.",
+                path,
+                metadata.mode() & 0o7777,
+                metadata.uid(),
+                metadata.gid()
+            );
+        }
+        Err(err) => {
+            eprintln!("Unable to inspect {} permissions: {}", path, err);
+        }
+    }
+
+    eprintln!(
+        "Current process credentials: euid {}, egid {}, groups {:?}.",
+        unsafe { libc::geteuid() },
+        unsafe { libc::getegid() },
+        current_groups()
+    );
+}
+
+#[cfg(target_os = "linux")]
+fn current_groups() -> Vec<libc::gid_t> {
+    let group_count = unsafe { libc::getgroups(0, std::ptr::null_mut()) };
+    if group_count <= 0 {
+        return Vec::new();
+    }
+
+    let mut groups = vec![0; group_count as usize];
+    let ret = unsafe { libc::getgroups(group_count, groups.as_mut_ptr()) };
+    if ret < 0 {
+        return Vec::new();
+    }
+
+    groups.truncate(ret as usize);
+    groups
 }
 
 #[cfg(target_os = "linux")]
