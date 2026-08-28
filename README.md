@@ -43,13 +43,67 @@ dnf install -y krunvm
 
 #### Dependencies
 
-* Rust Toolchain
+* [Rust Toolchain](https://rustup.rs/)
 * [libkrun](https://github.com/containers/libkrun)
 * [buildah](https://github.com/containers/buildah)
 * [asciidoctor](https://github.com/asciidoctor/asciidoctor)
 
+
+For example, on Debian/Ubuntu:
+
+```sh
+apt install asciidoctor buildah
+```
+
 #### Building
 
+Use the Makefile for normal local builds:
+
+```sh
+make
 ```
+
+This creates a release binary at `target/release/krunvm`.
+On macOS, the Makefile also signs the release binary with `krunvm.entitlements`.
+
+For a debug build:
+
+```sh
+make debug
+```
+
+You can also build directly with Cargo:
+
+```sh
 cargo build --release
+```
+
+For more info on build errors run:
+
+```sh
+make RUSTFLAGS='--verbose'
+```
+
+If you build directly with Cargo on macOS, sign the resulting binary before running it.
+
+#### Installing
+
+Install the release binary with:
+
+```sh
+make install PREFIX=/usr/local
+```
+
+Use `DESTDIR` when staging an install for packaging:
+
+```sh
+make install PREFIX=/usr DESTDIR=/tmp/krunvm-root
+```
+
+#### Checking changes
+
+Run the same Clippy check used by CI with:
+
+```sh
+cargo clippy --locked -- -D warnings
 ```
